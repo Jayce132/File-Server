@@ -1,70 +1,89 @@
 package server;
 
-import java.io.DataInputStream;
-import java.io.DataOutput;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Scanner;
+import java.nio.file.Path;
 
 public class Main {
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         System.out.println("Server started!");
         String address = "127.0.0.1";
         int port = 23456;
-        ServerSocket server = new ServerSocket(port, 50, InetAddress.getByName(address));
-        Socket socket = server.accept();
-        DataInputStream input = new DataInputStream(socket.getInputStream());
-        DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-        System.out.println("Received: " + input.readUTF());
-        output.writeUTF("All files were sent!");
-        System.out.println("Sent: All files were sent!");
+        Path dataLocation = Path.of(
+                System.getProperty("user.dir"),
+                "src", "server", "data"
+        );
 
-        Scanner scanner = new Scanner(System.in);
-        ArrayList<String> files = new ArrayList<>();
-        while (true) {
-            String[] commandAndName = scanner
-                    .nextLine()
-                    .split(" ");
-            String command = commandAndName[0];
-            String name = "name";
-            if (commandAndName.length == 2) {
-                name = commandAndName[1];
-            }
-            switch (command) {
-                case "add":
-                    if (files.size() <= 10
-                            && name.matches("file10|file[1-9]")
-                            && !files.contains(name)) {
-                        files.add(name);
-                        System.out.println("The file " + name + " added successfully");
-                    } else {
-                        System.out.println("Cannot add the file " + name);
-                    }
-                    break;
-                case "get":
-                    if (files.contains(name)) {
-                        System.out.println("The file " + name + " was sent");
-                    } else {
-                        System.out.println("The file " + name + " not found");
-                    }
-                    break;
-                case "delete":
-                    if (files.remove(name)) {
-                        System.out.println("The file " + name + " was deleted");
-                    } else {
-                        System.out.println("The file " + name + " not found");
-                    }
-                    break;
-                case "exit":
-                    return;
-                default:
-                    break;
+
+        boolean isRun = true;
+        while (isRun) {
+            try (ServerSocket server = new ServerSocket(port, 50, InetAddress.getByName(address));
+                 Socket socket = server.accept();
+                 DataInputStream input = new DataInputStream(socket.getInputStream());
+                 DataOutputStream output = new DataOutputStream(socket.getOutputStream())) {
+                String[] commandAndName = input
+                        .readUTF()
+                        .split(" ");
+
+                String command = commandAndName[0];
+                String name = "name";
+
+                if (commandAndName.length == 2) {
+                    name = commandAndName[1];
+                }
+
+                switch (command) {
+                    case "add":
+                        File file = new File(dataLocation + File.separator + name);
+                        if (file.exists()) {
+                            output.writeInt(403);
+                        } else {
+                            output.writeInt(200);
+                            try (FileWriter fileWriter = new FileWriter(file);
+                                 BufferedWriter writer = new BufferedWriter(fileWriter)) {
+                                String content = input.readUTF();
+                                writer.write(content);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        break;
+
+                    case "get":
+                        file = new File(dataLocation + File.separator + name);
+
+                        if (file.exists()) {
+                            try (FileReader fileReader = new FileReader(file);
+                                 BufferedReader reader = new BufferedReader(fileReader)) {
+                                output.writeInt(200);
+                                output.writeUTF(reader.readLine());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        } else {
+                            output.writeInt(404);
+                        }
+                        break;
+
+                    case "delete":
+                        file = new File(dataLocation + File.separator + name);
+
+                        if (file.delete()) {
+                            output.writeInt(200);
+                        } else {
+                            output.writeInt(404);
+                        }
+                        break;
+
+                    case "exit":
+                        isRun = false;
+                        return;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
